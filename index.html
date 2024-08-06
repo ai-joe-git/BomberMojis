@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emoji Bomber</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        #game-container {
+            text-align: center;
+        }
+        #game-board {
+            display: inline-block;
+            border: 2px solid #333;
+            background-color: #fff;
+        }
+        .cell {
+            width: 40px;
+            height: 40px;
+            display: inline-block;
+            font-size: 30px;
+            line-height: 40px;
+            text-align: center;
+            vertical-align: top;
+        }
+        #controls {
+            margin-top: 20px;
+        }
+        button {
+            font-size: 18px;
+            padding: 10px 20px;
+            margin: 0 10px;
+            cursor: pointer;
+        }
+        #score, #high-scores {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+        @media (max-width: 600px) {
+            .cell {
+                width: 30px;
+                height: 30px;
+                font-size: 24px;
+                line-height: 30px;
+            }
+        }
+        .explosion {
+            animation: explode 0.5s ease-out;
+        }
+        @keyframes explode {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.5; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+        .player-move {
+            animation: move 0.2s ease-out;
+        }
+        @keyframes move {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="game-board"></div>
+        <div id="controls">
+            <button id="start-btn">Start Game</button>
+            <button id="restart-btn" style="display: none;">Restart</button>
+        </div>
+        <div id="score">Score: 0</div>
+        <div id="high-scores">
+            <h3>High Scores</h3>
+            <ol id="high-scores-list"></ol>
+        </div>
+    </div>
+
+    <script>
+        const ROWS = 11;
+        const COLS = 13;
+        const WALL = '🧱';
+        const PLAYER = '😀';
+        const ENEMY = '👾';
+        const BOMB = '💣';
+        const EXPLOSION = '💥';
+        const EMPTY = '⬜';
+
+        let gameBoard = [];
+        let player = { x: 1, y: 1 };
+        let enemies = [];
+        let bombs = [];
+        let score = 0;
+        let gameInterval;
+        let highScores = [];
+
+        const gameBoardElement = document.getElementById('game-board');
+        const startButton = document.getElementById('start-btn');
+        const restartButton = document.getElementById('restart-btn');
+        const scoreElement = document.getElementById('score');
+        const highScoresListElement = document.getElementById('high-scores-list');
+
+        function initializeGame() {
+            gameBoard = [];
+            for (let i = 0; i < ROWS; i++) {
+                gameBoard[i] = [];
+                for (let j = 0; j < COLS; j++) {
+                    if (i === 0 || i === ROWS - 1 || j === 0 || j === COLS - 1 || (i % 2 === 0 && j % 2 === 0)) {
+                        gameBoard[i][j] = WALL;
+                    } else {
+                        gameBoard[i][j] = EMPTY;
+                    }
+                }
+            }
+            player = { x: 1, y: 1 };
+            gameBoard[player.y][player.x] = PLAYER;
+            enemies = [
+                { x: COLS - 2, y: 1 },
+                { x: 1, y: ROWS - 2 },
+                { x: COLS - 2, y: ROWS - 2 }
+            ];
+            enemies.forEach(enemy => {
+                gameBoard[enemy.y][enemy.x] = ENEMY;
+            });
+            bombs = [];
+            score = 0;
+            updateScore();
+        }
+
+        function renderBoard() {
+            gameBoardElement.innerHTML = '';
+            for (let i = 0; i < ROWS; i++) {
+                for (let j = 0; j < COLS; j++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.textContent = gameBoard[i][j];
+                    gameBoardElement.appendChild(cell);
+                }
+                gameBoardElement.appendChild(document.createElement('br'));
+            }
+        }
+
+        function updateScore() {
+            scoreElement.textContent = `Score: ${score}`;
+        }
+
+        function movePlayer(dx, dy) {
+            const newX = player.x + dx;
+            const newY = player.y + dy;
+            if (gameBoard[newY][newX] === EMPTY) {
+                gameBoard[player.y][player.x] = EMPTY;
+                player.x = newX;
+                player.y = newY;
+                gameBoard[player.y][player.x] = PLAYER;
+                const playerCell = gameBoardElement.children[player.y * COLS + player.x];
+                playerCell.classList.add('player-move');
+                setTimeout(() => playerCell.classList.remove('player-move'), 200);
+            }
+        }
+
+        function moveEnemies() {
+            enemies.forEach(enemy => {
+                const directions = [
+                    { dx: 0, dy: -1 },
+                    { dx: 1, dy: 0 },
+                    { dx: 0, dy: 1 },
+                    { dx: -1, dy: 0 }
+                ];
+                const validMoves = directions.filter(dir => {
+                    const newX = enemy.x + dir.dx;
+                    const newY = enemy.y + dir.dy;
+                    return gameBoard[newY][newX] === EMPTY;
+                });
+                if (validMoves.length > 0) {
+                    const move = validMoves[Math.floor(Math.random() * validMoves.length)];
+                    gameBoard[enemy.y][enemy.x] = EMPTY;
+                    enemy.x += move.dx;
+                    enemy.y += move.dy;
+                    gameBoard[enemy.y][enemy.x] = ENEMY;
+                }
+            });
+        }
+
+        function placeBomb() {
+            if (bombs.length < 3) {
+                bombs.push({ x: player.x, y: player.y, timer: 3 });
+                gameBoard[player.y][player.x] = BOMB;
+            }
+        }
+
+        function updateBombs() {
+            bombs.forEach((bomb, index) => {
+                bomb.timer--;
+                if (bomb.timer === 0) {
+                    explodeBomb(bomb);
+                    bombs.splice(index, 1);
+                }
+            });
+        }
+
+        function explodeBomb(bomb) {
+            const directions = [
+                { dx: 0, dy: 0 },
+                { dx: 0, dy: -1 },
+                { dx: 1, dy: 0 },
+                { dx: 0, dy: 1 },
+                { dx: -1, dy: 0 }
+            ];
+            directions.forEach(dir => {
+                const x = bomb.x + dir.dx;
+                const y = bomb.y + dir.dy;
+                if (x >= 0 && x < COLS && y >= 0 && y < ROWS && gameBoard[y][x] !== WALL) {
+                    if (gameBoard[y][x] === ENEMY) {
+                        score += 100;
+                        enemies = enemies.filter(e => e.x !== x || e.y !== y);
+                    }
+                    gameBoard[y][x] = EXPLOSION;
+                    const cell = gameBoardElement.children[y * COLS + x];
+                    cell.classList.add('explosion');
+                    setTimeout(() => {
+                        cell.classList.remove('explosion');
+                        if (gameBoard[y][x] === EXPLOSION) {
+                            gameBoard[y][x] = EMPTY;
+                        }
+                    }, 500);
+                }
+            });
+            updateScore();
+        }
+
+        function checkGameOver() {
+            if (gameBoard[player.y][player.x] === ENEMY || gameBoard[player.y][player.x] === EXPLOSION) {
+                clearInterval(gameInterval);
+                alert(`Game Over! Your score: ${score}`);
+                updateHighScores(score);
+                startButton.style.display = 'none';
+                restartButton.style.display = 'inline-block';
+            }
+            if (enemies.length === 0) {
+                clearInterval(gameInterval);
+                alert(`You Win! Your score: ${score}`);
+                updateHighScores(score);
+                startButton.style.display = 'none';
+                restartButton.style.display = 'inline-block';
+            }
+        }
+
+        function updateHighScores(newScore) {
+            highScores.push(newScore);
+            highScores.sort((a, b) => b - a);
+            highScores = highScores.slice(0, 5);
+            renderHighScores();
+        }
+
+        function renderHighScores() {
+            highScoresListElement.innerHTML = '';
+            highScores.forEach(score => {
+                const li = document.createElement('li');
+                li.textContent = score;
+                highScoresListElement.appendChild(li);
+            });
+        }
+
+        function gameLoop() {
+            moveEnemies();
+            updateBombs();
+            renderBoard();
+            checkGameOver();
+        }
+
+        function startGame() {
+            initializeGame();
+            renderBoard();
+            gameInterval = setInterval(gameLoop, 1000);
+            startButton.style.display = 'none';
+            restartButton.style.display = 'inline-block';
+        }
+
+        startButton.addEventListener('click', startGame);
+        restartButton.addEventListener('click', startGame);
+
+        document.addEventListener('keydown', (e) => {
+            switch (e.key) {
+                case 'ArrowUp':
+                    movePlayer(0, -1);
+                    break;
+                case 'ArrowRight':
+                    movePlayer(1, 0);
+                    break;
+                case 'ArrowDown':
+                    movePlayer(0, 1);
+                    break;
+                case 'ArrowLeft':
+                    movePlayer(-1, 0);
+                    break;
+                case ' ':
+                    placeBomb();
+                    break;
+            }
+        });
+
+        // Touch controls
+        let touchStartX, touchStartY;
+        gameBoardElement.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        });
+
+        gameBoardElement.addEventListener('touchend', (e) => {
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+            const dx = touchEndX - touchStartX;
+            const dy = touchEndY - touchStartY;
+
+            if (Math.abs(dx) > Math.abs(dy)) {
+                if (dx > 0) {
+                    movePlayer(1, 0);
+                } else {
+                    movePlayer(-1, 0);
+                }
+            } else {
+                if (dy > 0) {
+                    movePlayer(0, 1);
+                } else {
+                    movePlayer(0, -1);
+                }
+            }
+        });
+
+        gameBoardElement.addEventListener('dblclick', placeBomb);
+
+        renderHighScores();
+    </script>
+</body>
+  </html>
